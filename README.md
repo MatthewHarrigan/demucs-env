@@ -1,6 +1,6 @@
 # Demucs Stem Splitter
 
-Portable audio stem separation using Docker. Splits songs into individual instrument tracks.
+A simple Docker wrapper for [Demucs](https://github.com/adefossez/demucs), Meta's audio source separation model.
 
 ## Setup (one time)
 
