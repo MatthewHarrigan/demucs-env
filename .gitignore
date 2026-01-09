@@ -1,0 +1,14 @@
+# Output stems (keep folder structure)
+output/*
+!output/.gitkeep
+
+# Input audio (keep folder structure)
+input/*
+!input/.gitkeep
+
+# Model cache (keep folder structure)
+cache/*
+!cache/.gitkeep
+
+# macOS
+.DS_Store

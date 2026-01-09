@@ -1,0 +1,138 @@
+#!/bin/bash
+# Demucs stem splitter with interactive file selection
+
+cd "$(dirname "$0")"
+
+# Show available files in input/
+show_files() {
+    echo "Files in input/:"
+    echo ""
+    i=1
+    for f in input/*; do
+        [ -f "$f" ] && echo "  $i) $(basename "$f")" && i=$((i+1))
+    done
+    [ $i -eq 1 ] && echo "  (none - drop audio files into input/)"
+    echo ""
+}
+
+# Get file selection
+select_file() {
+    files=(input/*)
+    # Filter to only actual files
+    files=( "${files[@]}" )
+
+    if [ ${#files[@]} -eq 0 ] || [ ! -f "${files[0]}" ]; then
+        echo "No files in input/ folder. Drop some audio files there first."
+        exit 1
+    fi
+
+    if [ ${#files[@]} -eq 1 ]; then
+        FILE=$(basename "${files[0]}")
+        echo "Using: $FILE"
+    else
+        show_files
+        read -p "Enter number (or filename): " choice
+
+        if [[ "$choice" =~ ^[0-9]+$ ]]; then
+            idx=$((choice - 1))
+            if [ $idx -ge 0 ] && [ $idx -lt ${#files[@]} ]; then
+                FILE=$(basename "${files[$idx]}")
+            else
+                echo "Invalid selection"
+                exit 1
+            fi
+        else
+            FILE="$choice"
+        fi
+    fi
+}
+
+# Get mode selection
+select_mode() {
+    echo "Stem options:"
+    echo "  1) 6 stems - vocals, drums, bass, guitar, piano, other (best quality)"
+    echo "  2) 4 stems - vocals, drums, bass, other (faster)"
+    echo "  3) 2 stems - vocals + instrumental only (fastest)"
+    echo ""
+    read -p "Enter choice [1]: " mode_choice
+
+    case "${mode_choice:-1}" in
+        1|6)      MODE="6" ;;
+        2|4)      MODE="4" ;;
+        3|2|vocals) MODE="vocals" ;;
+        *)        MODE="6" ;;
+    esac
+}
+
+# Parse arguments or go interactive
+if [ $# -ge 1 ]; then
+    # Check if file exists in input/ or as given path
+    if [ -f "input/$1" ]; then
+        FILE="$1"
+    elif [ -f "$1" ]; then
+        # Copy file to input/
+        cp "$1" input/
+        FILE=$(basename "$1")
+        echo "Copied to input/$FILE"
+    else
+        echo "File not found: $1"
+        exit 1
+    fi
+    MODE="${2:-6}"
+else
+    # Interactive mode
+    select_file
+    select_mode
+fi
+
+# Set up demucs arguments
+case "$MODE" in
+    6)      ARGS="-n htdemucs_6s"; MODEL="htdemucs_6s" ;;
+    4)      ARGS=""; MODEL="htdemucs" ;;
+    vocals) ARGS="--two-stems=vocals"; MODEL="htdemucs" ;;
+    *)      echo "Unknown mode: $MODE"; exit 1 ;;
+esac
+
+echo ""
+echo "Splitting: $FILE ($MODE stems)"
+echo "This may take a few minutes..."
+echo ""
+
+# Create cache dir if needed
+mkdir -p "$(pwd)/cache"
+
+docker run --rm \
+    -v "$(pwd)/input:/audio/input" \
+    -v "$(pwd)/output:/audio/output" \
+    -v "$(pwd)/cache:/root/.cache" \
+    -e OPENBLAS_NUM_THREADS=1 \
+    -e OMP_NUM_THREADS=1 \
+    demucs $ARGS -o output "input/$FILE"
+
+# Get the base name without extension
+BASENAME="${FILE%.*}"
+OUTDIR="$(pwd)/output/$MODEL/$BASENAME"
+
+# Create Audacity LOF file if separation succeeded
+if [ -d "$OUTDIR" ]; then
+    LOF="$OUTDIR/$BASENAME.lof"
+    echo "# Audacity LOF file - double-click to open all stems" > "$LOF"
+
+    for STEM in vocals drums bass piano guitar other instrumental; do
+        if [ -f "$OUTDIR/$STEM.wav" ]; then
+            echo "file \"$(cd "$OUTDIR" && pwd)/$STEM.wav\"" >> "$LOF"
+        fi
+    done
+
+    echo ""
+    echo "=========================================="
+    echo "Done! Stems saved to:"
+    echo "  $OUTDIR"
+    echo ""
+    echo "Open in Audacity:"
+    echo "  $LOF"
+    echo "=========================================="
+
+    # Open Finder to the output folder
+    open "$OUTDIR"
+fi
