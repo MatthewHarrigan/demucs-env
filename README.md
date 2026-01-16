@@ -29,6 +29,13 @@ Lists files in `input/`, lets you pick one, choose stem count, and auto-opens re
 ```
 Auto-copies to `input/` and processes.
 
+### From YouTube
+```bash
+./download "https://youtube.com/watch?v=..."
+./split
+```
+Download first, then split.
+
 ## Stem Options
 
 | Mode | Stems | Notes |
