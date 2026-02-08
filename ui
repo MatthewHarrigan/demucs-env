@@ -1,0 +1,10 @@
+#!/bin/bash
+cd "$(dirname "$0")"
+
+if [ ! -d ".venv" ]; then
+    echo "Run ./setup first"
+    exit 1
+fi
+
+source .venv/bin/activate
+python app.py

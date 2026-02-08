@@ -1,9 +1,21 @@
 #!/bin/bash
-# Demucs stem splitter with interactive file selection
+# Demucs stem splitter - uses native (MPS GPU) by default, --docker for portability
 
 cd "$(dirname "$0")"
 
-# Show available files in input/
+USE_DOCKER=false
+ARGS=()
+
+# Parse flags
+for arg in "$@"; do
+    case "$arg" in
+        --docker) USE_DOCKER=true ;;
+        *) ARGS+=("$arg") ;;
+    esac
+done
+set -- "${ARGS[@]}"
+
+# Show available files
 show_files() {
     echo "Files in input/:"
     echo ""
@@ -18,11 +30,10 @@ show_files() {
 # Get file selection
 select_file() {
     files=(input/*)
-    # Filter to only actual files
-    files=( "${files[@]}" )
 
     if [ ${#files[@]} -eq 0 ] || [ ! -f "${files[0]}" ]; then
-        echo "No files in input/ folder. Drop some audio files there first."
+        echo "No files in input/ folder."
+        echo "Tip: Use ./download <url> to download from YouTube"
         exit 1
     fi
 
@@ -38,8 +49,7 @@ select_file() {
             if [ $idx -ge 0 ] && [ $idx -lt ${#files[@]} ]; then
                 FILE=$(basename "${files[$idx]}")
             else
-                echo "Invalid selection"
-                exit 1
+                echo "Invalid selection"; exit 1
             fi
         else
             FILE="$choice"
@@ -50,18 +60,31 @@ select_file() {
 # Get mode selection
 select_mode() {
     echo "Stem options:"
-    echo "  1) 6 stems - vocals, drums, bass, guitar, piano, other (best quality)"
+    echo "  1) 6 stems - vocals, drums, bass, guitar, piano, other (best)"
     echo "  2) 4 stems - vocals, drums, bass, other (faster)"
-    echo "  3) 2 stems - vocals + instrumental only (fastest)"
+    echo "  3) 2 stems - vocals + instrumental (fastest)"
     echo ""
     read -p "Enter choice [1]: " mode_choice
 
     case "${mode_choice:-1}" in
         1|6)      MODE="6" ;;
         2|4)      MODE="4" ;;
-        3|2|vocals) MODE="vocals" ;;
+        3|vocals) MODE="vocals" ;;
         *)        MODE="6" ;;
     esac
+}
+
+# Create Audacity LOF file
+create_lof() {
+    local outdir="$1"
+    local basename="$2"
+    local lof="$outdir/$basename.lof"
+
+    echo "# Audacity LOF file" > "$lof"
+    for stem in vocals drums bass piano guitar other instrumental; do
+        [ -f "$outdir/$stem.wav" ] && echo "file \"$outdir/$stem.wav\"" >> "$lof"
+    done
+    echo "$lof"
 }
 
 # Parse arguments or go interactive
@@ -69,70 +92,67 @@ if [ $# -ge 1 ]; then
     if [ -f "input/$1" ]; then
         FILE="$1"
     elif [ -f "$1" ]; then
-        # Copy file to input/
         cp "$1" input/
         FILE=$(basename "$1")
         echo "Copied to input/$FILE"
     else
         echo "File not found: $1"
-        echo "Tip: Use ./download <url> to download from YouTube first"
         exit 1
     fi
     MODE="${2:-6}"
 else
-    # Interactive mode
     select_file
     select_mode
 fi
 
 # Set up demucs arguments
 case "$MODE" in
-    6)      ARGS="-n htdemucs_6s"; MODEL="htdemucs_6s" ;;
-    4)      ARGS=""; MODEL="htdemucs" ;;
-    vocals) ARGS="--two-stems=vocals"; MODEL="htdemucs" ;;
-    *)      echo "Unknown mode: $MODE"; exit 1 ;;
+    6)      DEMUCS_ARGS="-n htdemucs_6s"; MODEL="htdemucs_6s" ;;
+    4)      DEMUCS_ARGS=""; MODEL="htdemucs" ;;
+    vocals) DEMUCS_ARGS="--two-stems=vocals"; MODEL="htdemucs" ;;
+    *)      echo "Unknown mode: $MODE (use 6, 4, or vocals)"; exit 1 ;;
 esac
 
-echo ""
-echo "Splitting: $FILE ($MODE stems)"
-echo "This may take a few minutes..."
-echo ""
-
-# Create cache dir if needed
-mkdir -p "$(pwd)/cache"
-
-docker run --rm \
-    -v "$(pwd)/input:/audio/input" \
-    -v "$(pwd)/output:/audio/output" \
-    -v "$(pwd)/cache:/root/.cache" \
-    -e OPENBLAS_NUM_THREADS=1 \
-    -e OMP_NUM_THREADS=1 \
-    demucs $ARGS -o output "input/$FILE"
-
-# Get the base name without extension
 BASENAME="${FILE%.*}"
 OUTDIR="$(pwd)/output/$MODEL/$BASENAME"
 
-# Create Audacity LOF file if separation succeeded
+echo ""
+if $USE_DOCKER; then
+    echo "Splitting: $FILE ($MODE stems) [docker]"
+    echo ""
+    mkdir -p cache
+    docker run --rm \
+        -v "$(pwd)/input:/audio/input" \
+        -v "$(pwd)/output:/audio/output" \
+        -v "$(pwd)/cache:/root/.cache" \
+        -e OPENBLAS_NUM_THREADS=1 \
+        -e OMP_NUM_THREADS=1 \
+        demucs $DEMUCS_ARGS -o output "input/$FILE"
+else
+    if [ ! -d ".venv" ]; then
+        echo "Native env not set up. Run: uv venv && uv pip install demucs yt-dlp soundfile"
+        echo "Or use: ./split --docker"
+        exit 1
+    fi
+    source .venv/bin/activate
+    echo "Splitting: $FILE ($MODE stems) [native/MPS]"
+    echo ""
+    python -m demucs -d mps $DEMUCS_ARGS -o output "input/$FILE"
+fi
+
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "Error: demucs failed. Check the output above."
+    exit 1
+fi
+
+# Post-processing
 if [ -d "$OUTDIR" ]; then
-    LOF="$OUTDIR/$BASENAME.lof"
-    echo "# Audacity LOF file - double-click to open all stems" > "$LOF"
-
-    for STEM in vocals drums bass piano guitar other instrumental; do
-        if [ -f "$OUTDIR/$STEM.wav" ]; then
-            echo "file \"$(cd "$OUTDIR" && pwd)/$STEM.wav\"" >> "$LOF"
-        fi
-    done
-
+    LOF=$(create_lof "$OUTDIR" "$BASENAME")
     echo ""
     echo "=========================================="
-    echo "Done! Stems saved to:"
-    echo "  $OUTDIR"
-    echo ""
-    echo "Open in Audacity:"
-    echo "  $LOF"
+    echo "Done! Stems: $OUTDIR"
+    echo "Audacity:   $LOF"
     echo "=========================================="
-
-    # Open Finder to the output folder
     open "$OUTDIR"
 fi

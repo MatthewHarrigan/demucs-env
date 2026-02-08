@@ -1,0 +1,56 @@
+#!/bin/bash
+# One-command setup for demucs stem splitter
+# Idempotent - safe to run multiple times
+
+set -e
+cd "$(dirname "$0")"
+
+echo "=== Demucs Setup ==="
+echo ""
+
+# Check for Homebrew
+if ! command -v brew &>/dev/null; then
+    echo "Homebrew not found. Install it first:"
+    echo '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+    exit 1
+fi
+echo "[ok] Homebrew"
+
+# Check for ffmpeg
+if ! command -v ffmpeg &>/dev/null; then
+    echo "Installing ffmpeg..."
+    brew install ffmpeg
+else
+    echo "[ok] ffmpeg"
+fi
+
+# Check for uv
+if ! command -v uv &>/dev/null; then
+    echo "Installing uv..."
+    brew install uv
+else
+    echo "[ok] uv"
+fi
+
+# Create venv if missing
+if [ ! -d ".venv" ]; then
+    echo "Creating virtual environment..."
+    uv venv
+else
+    echo "[ok] .venv"
+fi
+
+# Install packages
+echo "Installing packages..."
+uv pip install --quiet demucs yt-dlp soundfile gradio "huggingface-hub<1.0"
+
+# Create directories
+mkdir -p input output cache
+
+echo ""
+echo "=== Setup complete ==="
+echo ""
+echo "Usage:"
+echo "  ./split              Split audio (CLI, interactive)"
+echo "  ./ui                 Launch web interface"
+echo "  ./download <url>     Download from YouTube"

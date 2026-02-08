@@ -1,31 +1,55 @@
 #!/bin/bash
-# Download audio from YouTube/URL to input folder
+# Download audio from YouTube/URL - uses native by default, --docker for portability
 
 cd "$(dirname "$0")"
 
-if [ -z "$1" ]; then
-    echo "Usage: ./download <url>"
+USE_DOCKER=false
+URL=""
+
+# Parse flags
+for arg in "$@"; do
+    case "$arg" in
+        --docker) USE_DOCKER=true ;;
+        *) URL="$arg" ;;
+    esac
+done
+
+if [ -z "$URL" ]; then
+    echo "Usage: ./download [--docker] <url>"
     echo ""
     echo "Examples:"
     echo "  ./download https://youtube.com/watch?v=..."
-    echo "  ./download https://soundcloud.com/..."
+    echo "  ./download --docker https://soundcloud.com/..."
     exit 1
 fi
 
-mkdir -p "$(pwd)/input" "$(pwd)/cache"
+mkdir -p input
 
-echo "Downloading: $1"
+echo "Downloading: $URL"
 echo ""
 
-docker run --rm \
-    -v "$(pwd)/input:/audio/input" \
-    -v "$(pwd)/cache:/root/.cache" \
-    --entrypoint yt-dlp \
-    demucs \
-    -x --audio-format mp3 --audio-quality 0 \
-    -o "input/%(title)s.%(ext)s" \
-    "$1"
+if $USE_DOCKER; then
+    mkdir -p cache
+    docker run --rm \
+        -v "$(pwd)/input:/audio/input" \
+        -v "$(pwd)/cache:/root/.cache" \
+        --entrypoint yt-dlp \
+        demucs \
+        -x --audio-format mp3 --audio-quality 0 \
+        -o "input/%(title)s.%(ext)s" \
+        "$URL"
+else
+    if [ ! -d ".venv" ]; then
+        echo "Native env not set up. Run: uv venv && uv pip install demucs yt-dlp soundfile"
+        echo "Or use: ./download --docker <url>"
+        exit 1
+    fi
+    source .venv/bin/activate
+    yt-dlp -x --audio-format mp3 --audio-quality 0 \
+        -o "input/%(title)s.%(ext)s" \
+        "$URL"
+fi
 
 echo ""
 echo "Files in input/:"
-ls -1 input/*.mp3 2>/dev/null | xargs -I{} basename {}
+ls -1 input/ 2>/dev/null
