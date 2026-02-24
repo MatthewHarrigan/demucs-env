@@ -42,7 +42,7 @@ fi
 
 # Install packages
 echo "Installing packages..."
-uv pip install --quiet demucs yt-dlp soundfile gradio "huggingface-hub<1.0" torchcodec
+uv pip install --quiet demucs yt-dlp soundfile gradio librosa "huggingface-hub<1.0" torchcodec
 
 # Create directories
 mkdir -p input output cache

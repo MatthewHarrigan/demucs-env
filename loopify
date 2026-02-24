@@ -1,0 +1,14 @@
+#!/bin/bash
+# Auto-extract bar-aligned loops from a stem/audio file
+
+set -e
+cd "$(dirname "$0")"
+
+if [ ! -d ".venv" ]; then
+  echo "No .venv found. Run ./setup first."
+  exit 1
+fi
+
+source .venv/bin/activate
+
+python scripts/loopify.py "$@"

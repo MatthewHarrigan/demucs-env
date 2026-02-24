@@ -44,6 +44,12 @@ docker build -t demucs .
 
 # Or specify file and mode directly
 ./split "song.mp3" 6
+
+# Extract an auto-aligned loop (from drum stem or any audio)
+./loopify "output/htdemucs_6s/My Song/drums.wav" --bars 2 --repeats 16
+
+# v2: generate one loop per detected section
+./loopify "output/htdemucs_6s/My Song/drums.wav" --bars 2 --repeats 16 --sections 3
 ```
 
 Use `--docker` flag for portability (slower, but works anywhere):
@@ -56,6 +62,7 @@ Features:
 - List files in `input/`, pick one, choose stem count
 - Auto-open results in Finder
 - Generate `.lof` file for Audacity
+- `loopify` detects beat grid, picks bar-aligned loop points, and exports a repeated practice MP3
 
 ## Stem Options
 
